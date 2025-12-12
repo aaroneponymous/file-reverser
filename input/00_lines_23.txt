@@ -1,0 +1,23 @@
+Yep — we can do exactly that.
+
+Here’s how we’ll run each “code review” session (you as Entry-level, me as Senior C++ Engineer):
+
+* **You start with a short design pitch** (what the component does, invariants, ownership model, complexity goals, failure/exception policy, threading assumptions).
+* **You paste the relevant code** (and any tests/bench harness if you have them).
+* I’ll review along your criteria:
+
+  1. **Readability** (naming, structure, comment quality, “obviousness”)
+  2. **Correctness** (UB risks, lifetime, invariants, edge cases, exception safety)
+  3. **Design** (SOLID tradeoffs, layering, API shape, extensibility)
+  4. **Idioms** (RAII, rule of 0/5, copy/move correctness, strong guarantees, etc.)
+  5. **Modern C++ usage** (std facilities, ranges/algorithms, constexpr, concepts if helpful, etc.)
+  6. **Performance** (alloc strategy, cache behavior, false sharing, contention, fragmentation, perf traps)
+
+What you send to begin:
+
+* **Task/project spec** (1–2 paragraphs, or a link/prompt text)
+* **Stage you’re at** (e.g., “API skeleton”, “allocator integration”, “threading”, “final polish”)
+* **Constraints** (C++ standard target, platform, latency/throughput goals, allowed deps)
+* The **code** (plus any failing tests / sanitizer output)
+
+Once you post the task + your current code, we’ll do the first review.
