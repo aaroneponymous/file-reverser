@@ -19,7 +19,10 @@ namespace quantiq
 
             ~io_raii() 
             {
-                close();
+                if (is_open())
+                {
+                    close();
+                }
             }
 
             void ropen(const char* path)
