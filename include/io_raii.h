@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <utility>
 #include <cstddef>
+#include <sys/uio.h>
 
 
 namespace quantiq
@@ -91,6 +92,16 @@ namespace quantiq
                     return ::write(fd_, buf, nbytes);
                 }
                 else { throw std::runtime_error("write() error"); }
+            }
+
+            ssize_t writeall_v(const struct iovec* iov, int iovcnt)
+            {
+                if (is_set() && is_open()) 
+                {
+                    return ::writev(fd_, iov, iovcnt);
+                }
+                else { throw std::runtime_error("writev() error"); }
+                
             }
 
             bool is_eof() const noexcept { return eof_; }

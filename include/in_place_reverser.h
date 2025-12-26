@@ -8,6 +8,7 @@
 #include <ranges>
 #include <iostream>
 
+
 namespace utf8_inplace
 {
     inline static uint8_t u8(std::byte b) noexcept { return std::to_integer<uint8_t>(b); }
@@ -64,10 +65,16 @@ namespace utf8_inplace
         return true;
     }
 
+
+
+
+
+
+
     /** @note: buffer & carry_buffer switching mechanism (needs to be revisited) 
      *  @return: int? int32_t? - our max size of buffer would be 5 MiB
     */
-    inline int reverse_inplace(std::byte*& buffer, std::size_t bytes_written,
+    inline int reverse_place(std::byte*& buffer, std::size_t bytes_written,
                                        std::size_t buffer_size, std::byte*& carry_buffer, 
                                        std::size_t carry_size, std::size_t& carry_bytes) noexcept
     {
