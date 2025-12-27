@@ -21,8 +21,8 @@
 
 int main()
 {
-  std::string in_path("../../input/crime_and_punishment.txt");
-  std::string out_path("../../output/crime_and_punishment.txt");
+  std::string in_path("../../input/hamlet.txt");
+  std::string out_path("../../output/hamlet.txt");
 
   quantiq::io_raii input;
   quantiq::io_raii output;
@@ -39,7 +39,6 @@ int main()
   input.ropen(in_path.data());
   output.wopen(out_path.data());
 
-  std::size_t bytes_carried{ };
 
   while (true) 
   {

@@ -17,15 +17,15 @@ namespace file_reverser
 
     struct Segment
     {
-        std::byte* buff_;
-        std::size_t off_;
-        std::size_t len_;
+        std::byte* buff_{ nullptr };
+        std::size_t off_{ };
+        std::size_t len_{ };
     };
 
     struct WriteItem
     {
         Segment seg_[2];
-        std::int8_t seg_count_;         /** @revist: alignment-requirements  */
+        std::int8_t seg_count_{ };         /** @revist: alignment-requirements  */
     };
 
     inline static uint8_t u8(std::byte b) noexcept { return std::to_integer<uint8_t>(b); }
@@ -82,40 +82,50 @@ namespace file_reverser
         return true;
     }
 
+    // either use relative positioning or absolute
+    // absolute easier
 
     inline WriteItem reverse_segment(Segment& seg_in, Segment& carry_a, Segment& carry_b) noexcept
     {
+        WriteItem item_to_write{ };
+
         const std::size_t seg_in_size = seg_in.len_;
 
         if (carry_a.len_ > 0)
         {
-            char *lf_ptr = static_cast<char*>(
-                std::memchr( static_cast<void*>(seg_in.buff_), '\n', seg_in.len_)
+            char *prefix_lf  = static_cast<char*>(
+                std::memchr(seg_in.buff_, '\n', seg_in.len_)
             );
-
-            // assert(lf_ptr);     // should not be null : according to the max line fits in 4096 bytes invariant unless EOF
-            // assertion fails
             
-            std::size_t prefix_size = (reinterpret_cast<std::byte*>(lf_ptr) - seg_in.buff_) + 1; // one past the '\n'
-            std::memcpy( static_cast<void*>(carry_a.buff_), static_cast<void*>(seg_in.buff_), prefix_size);
+            std::size_t prefix_size = (reinterpret_cast<std::byte*>(prefix_lf) - seg_in.buff_) + 1; // one past the '\n'
+            std::memcpy( carry_a.buff_ + carry_a.len_, seg_in.buff_, prefix_size);
 
             carry_a.len_ += prefix_size;
             carry_a.off_ = 0;
 
             std::span<std::byte> carry_a_span{ carry_a.buff_, carry_a.len_ };
-            auto is_reversed = reverse_range(carry_a_span, carry_a.off_, carry_a.len_);
+            const auto is_reversed = reverse_range(carry_a_span, carry_a.off_, carry_a.len_);
+            auto& index_seg = item_to_write.seg_count_;
+            item_to_write.seg_[index_seg++] = carry_a;
+            // ++index_seg;
 
-            seg_in.len_ -= prefix_size;
+            // can we switch carry_a & carry_b now?
+            carry_a.len_ = carry_a.off_ = 0;
+            std::swap(carry_a, carry_b);
+
+            seg_in.len_ -= prefix_size;   // size reduced
             seg_in.off_ = prefix_size;
         }
 
         std::size_t curr_pos = seg_in.off_;
-        std::span<std::byte> seg_in_span{ seg_in.buff_ + seg_in.off_, seg_in.len_ };
+        const std::size_t pos_end = seg_in.off_ + seg_in.len_;
+        assert(pos_end == seg_in_size);
+        std::span<std::byte> seg_in_span{ seg_in.buff_, seg_in_size };
 
-        while (curr_pos < seg_in_size)
+        while (curr_pos < pos_end)
         {
             char* lf_next =  static_cast<char*>(
-                std::memchr( static_cast<void*>(seg_in.buff_ + static_cast<ptrdiff_t>(curr_pos)), '\n', seg_in.len_ )
+                std::memchr(seg_in.buff_ + curr_pos, '\n', pos_end - curr_pos)
             );
 
             if (!lf_next)
@@ -123,32 +133,37 @@ namespace file_reverser
                 std::size_t tail = seg_in_size - curr_pos; // check again
                 seg_in.len_ -= tail;
 
-                std::memcpy( static_cast<void*>(carry_b.buff_), static_cast<void*>(seg_in.buff_ +
-                            static_cast<ptrdiff_t>(curr_pos)), tail);
-                carry_b.len_ = tail;
-                carry_b.off_ = 0;
+                std::memcpy( carry_a.buff_, seg_in.buff_ +
+                            static_cast<ptrdiff_t>(curr_pos), tail);
+                carry_a.len_ = tail;
+                carry_a.off_ = 0;
 
                 break;
-
-
             }
 
-            std::size_t lf = reinterpret_cast<std::byte*>(lf_next) - (seg_in.buff_ + seg_in.off_);
+            std::size_t lf = reinterpret_cast<std::byte*>(lf_next) - seg_in.buff_;
             std::size_t end = lf;
 
             if (end > curr_pos && seg_in.buff_[end - 1] == std::byte{ 0x0D }) --end;
 
             if (!reverse_range(seg_in_span, curr_pos, end)) {
+                std::cout << "total_size: " << seg_in_span.size() << "\n";
+                std::cout << "curr_pos: " << curr_pos << " - " << 
+                            static_cast<char>(seg_in_span[curr_pos]) << "\n";
+                std::cout << "end: " << end << " - " << 
+                            static_cast<char>(seg_in_span[end]) << "\n";
+                std::cout << "string: " << reinterpret_cast<char*>((seg_in_span.subspan(curr_pos, seg_in_span.size() - curr_pos - 1)).data()) << "\n";
+                
                 throw std::runtime_error("reverse_range returned false\n");
             }
 
             curr_pos = lf + 1;
         }
 
-        std::swap(carry_a, carry_b);
-        return WriteItem{ { seg_in, carry_b }, 2 };
+        auto& seg_index = item_to_write.seg_count_;
+        item_to_write.seg_[seg_index++] = seg_in;
 
+        return std::move(item_to_write);
     } 
-
 
 } 
