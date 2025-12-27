@@ -6,8 +6,8 @@
 #include "../io_raii.h"
 #include "../file_reverser.h"
 
-#define BUFFSIZE 4096  // 4 KiB 
-// #define BUFFSIZE 8192  // 8 KiB
+// #define BUFFSIZE 4096  // 4 KiB 
+#define BUFFSIZE 8192  // 8 KiB
 // #define BUFFSIZE 131072   // 1 MiB
 // #define BUFFSIZE 262144   // 2 MiB
 // #define BUFFSIZE 524'288     // 5 MiB
@@ -21,8 +21,8 @@
 
 int main()
 {
-  std::string in_path("../../input/hamlet.txt");
-  std::string out_path("../../output/hamlet.txt");
+  std::string in_path("../../input/crime_and_punishment.txt");
+  std::string out_path("../../output/crime_and_punishment.txt");
 
   quantiq::io_raii input;
   quantiq::io_raii output;
