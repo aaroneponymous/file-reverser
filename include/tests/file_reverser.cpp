@@ -41,34 +41,36 @@ int main()
 
   std::size_t bytes_carried{ };
 
-  while (true)
+  while (true) 
   {
-    auto n = input.read(seg_in.buff_, BUFFSIZE);
-    seg_in.off_ = 0;
-    seg_in.len_ = n;
-  
-    if (n > 0)
-    {
-        file_reverser::WriteItem item = file_reverser::reverse_segment(seg_in, carry_seg_a, carry_seg_b);
-        iovec iov[2] = { { item.seg_[0].buff_ + item.seg_[0].off_, item.seg_[0].len_ },
-                         { item.seg_[1].buff_ + item.seg_[1].off_, item.seg_[1].len_ }};
+      auto n = input.read(seg_in.buff_, BUFFSIZE);
+      seg_in.off_ = 0;
+      seg_in.len_ = static_cast<std::size_t>(n);
 
-        output.writeall_v(iov, 2);
-        item.seg_[0].len_ = item.seg_[0].off_ = 0;
-        item.seg_[1].len_ = item.seg_[1].off_ = 0;
-    }
+      if (n > 0) 
+      {
+          auto item = file_reverser::reverse_segment(seg_in, carry_seg_a, carry_seg_b);
 
-    if (n == 0) {
-        if (carry_seg_a.len_ > 0)
-        {
-            std::span<std::byte> eof{ carry_seg_a.buff_, carry_seg_a.len_ };
-            file_reverser::reverse_range(eof, 0, carry_seg_a.len_);
-            output.write(eof.data(), eof.size());
-        }
+          iovec iov[2]{};
+          for (int i = 0; i < item.seg_count_; ++i) 
+          {
+              iov[i].iov_base = item.seg_[i].buff_ + item.seg_[i].off_;
+              iov[i].iov_len  = item.seg_[i].len_;
+          }
+          output.writeall_v(iov, item.seg_count_);
+      }
 
-        break;
-    }
+      if (n == 0) {
+          if (carry_seg_a.len_ > 0) 
+          {
+              std::span<std::byte> eof{ carry_seg_a.buff_, carry_seg_a.len_ };
+              file_reverser::reverse_range(eof, 0, carry_seg_a.len_);
+              output.write(eof.data(), eof.size());
+          }
+          break;
+      }
   }
+
 
   input.close();
   output.close();
