@@ -43,8 +43,8 @@ int main()
   while (true) 
   {
       auto n = input.read(seg_in.buff_, BUFFSIZE);
-      seg_in.off_ = 0;
       seg_in.len_ = static_cast<std::size_t>(n);
+      seg_in.off_ = 0;
 
       if (n > 0) 
       {

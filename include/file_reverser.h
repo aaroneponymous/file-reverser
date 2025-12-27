@@ -13,13 +13,37 @@
 namespace file_reverser
 {
 
-    /** @components: */
+    /**  
+     *  @buffer:
+     *  - A buffer is encapsulated within the Segment struct
+     * 
+     *  @segment:
+     *  - struct Segment holds valid bytes in the buffer (len_), 
+     *    that are either:
+     *    1. Read In, 2. To Be Processed, or 3. Written To
+     *    from a specified offset (off_)
+     * 
+     *  @writeitem:
+     *  - struct WriteItem organizes and holds the components
+     *    needed to perform a write to file
+     * 
+     *  - @members:
+     *    - seg_ array can hold upto two Segment objects:
+     *    - if a carrying logic is needed, a carry buffer
+     *      Segment object always resides at seg_[0]
+     *      followed by a normal buffer segment
+     *      - a carry buffer might contain reversed bytes
+     *        from a preceding iteration and thus those
+     *        bytes always come before the recently
+     *        processed buffer
+     *    - seg_count_
+    */
 
     struct Segment
     {
         std::byte* buff_{ nullptr };
-        std::size_t off_{ };
         std::size_t len_{ };
+        std::size_t off_{ };
     };
 
     struct WriteItem
