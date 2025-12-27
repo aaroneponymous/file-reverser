@@ -36,7 +36,6 @@ namespace file_reverser
      *        from a preceding iteration and thus those
      *        bytes always come before the recently
      *        processed buffer
-     *    - seg_count_
     */
 
     struct Segment
