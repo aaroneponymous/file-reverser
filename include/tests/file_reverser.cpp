@@ -14,11 +14,6 @@
 
 
 
-/**
- * @todo: I'm skipping tabs
- * - See 01_more_lines.txt
- */
-
 int main()
 {
   std::string in_path("../../input/crime_and_punishment.txt");
@@ -48,7 +43,7 @@ int main()
 
       if (n > 0) 
       {
-          auto item = file_reverser::reverse_segment(seg_in, carry_seg_a, carry_seg_b);
+          auto item = file_reverser::utilities::st::reverse_segment(seg_in, carry_seg_a, carry_seg_b);
 
           iovec iov[2]{};
           for (int i = 0; i < item.seg_count_; ++i) 
@@ -59,15 +54,7 @@ int main()
           output.writeall_v(iov, item.seg_count_);
       }
 
-      if (n == 0) {
-          if (carry_seg_a.len_ > 0) 
-          {
-              std::span<std::byte> eof{ carry_seg_a.buff_, carry_seg_a.len_ };
-              file_reverser::reverse_range(eof, 0, carry_seg_a.len_);
-              output.write(eof.data(), eof.size());
-          }
-          break;
-      }
+      if (n <= 0) break;
   }
 
 

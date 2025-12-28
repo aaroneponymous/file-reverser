@@ -33,9 +33,7 @@ namespace quantiq
                 
                 if (fd_ < 0)
                 {
-                    if (errno == ENONET) {
-                        throw std::runtime_error("no file exists\n");
-                    }
+                    throw std::runtime_error("no file exists\n");
                 }
 
                 is_open_ = true;
