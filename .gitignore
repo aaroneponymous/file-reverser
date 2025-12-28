@@ -36,6 +36,54 @@
 *.exe
 *.out
 *.app
+*.bin
 
 # debug information files
 *.dwo
+*.dSYM/
+*.debug
+
+# -----------------------------
+# Build directories (common)
+# -----------------------------
+build/
+Build/
+cmake-build-*/
+out/
+bin/
+obj/
+*.cmake
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# -----------------------------
+# Editor/OS junk
+# -----------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# -----------------------------
+# Perf / profiling / core dumps
+# -----------------------------
+perf.data
+perf.data.old
+*.prof
+*.gmon
+vgcore.*
+callgrind.out.*
+massif.out.*
+core
+core.*
+
+# -----------------------------
+# Generated test-suite outputs
+# (ignore generated text + manifest inside test_suite inputs)
+# -----------------------------
+src/baseline/test_suite/input/**
+
+# If you also generate outputs beside inputs, uncomment:
+src/baseline/test_suite/output/**

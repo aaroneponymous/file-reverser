@@ -46,8 +46,6 @@ namespace file_reverser
         std::size_t off_{ };
     };
 
-    // should I add static assertions?
-    // total: 56 bytes
     struct WriteItem
     {
         Segment seg_[2];                   // size: 2 * 24 : 48 bytes
@@ -56,7 +54,7 @@ namespace file_reverser
 
     namespace utilities
     {
-                constexpr inline uint8_t u8(std::byte b) noexcept { return std::to_integer<uint8_t>(b); }
+        constexpr inline uint8_t u8(std::byte b) noexcept { return std::to_integer<uint8_t>(b); }
 
         /** @utf8 multi-byte: Pattern has at least two
          *   beginning bits set to 1
@@ -111,6 +109,7 @@ namespace file_reverser
             return true;
         }
     }
+
     namespace utilities::st
     {
         inline WriteItem reverse_segment(Segment& seg_recent, Segment& carry, Segment& carry_backup)
@@ -320,6 +319,5 @@ namespace file_reverser
             return std::move(item_to_write);
         }        
     }
-
 
 } 

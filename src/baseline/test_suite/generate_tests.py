@@ -162,7 +162,7 @@ def make_newline_at_offset_lf(path: Path, newline_at: int, desc: str, manifest: 
 
 def make_crlf_split_across_boundary(path: Path, cr_at: int, desc: str, manifest: list[str]) -> None:
     """
-    Create a CRLF file where '\\r' is at absolute index cr_at and '\\n' at cr_at+1.
+    Create a CRLF file where '\r' is at absolute index cr_at and '\n' at cr_at+1.
     """
     ensure_dir(path)
     with path.open("wb") as f:
@@ -173,6 +173,13 @@ def make_crlf_split_across_boundary(path: Path, cr_at: int, desc: str, manifest:
 
         # Need content_len = cr_at - written <= 4094 => written >= cr_at - 4094
         target_written = max(0, cr_at - max_content)
+
+        # ---- FIX: with CRLF you can never reach offset 1 using whole CRLF-terminated lines
+        # For BUF_SIZE=4096, cr_at=4095 => target_written becomes 1. Bump to 2.
+        if target_written == 1:
+            target_written = 2
+        # ---- end fix
+
         written = advance_to(f, written, target_written, nl)
 
         content_len = cr_at - written
@@ -186,20 +193,26 @@ def make_crlf_split_across_boundary(path: Path, cr_at: int, desc: str, manifest:
 
 def write_utf8_split_line_abs(f, written: int, split_offset: int, token_bytes: bytes, newline: bytes) -> int:
     """
-    Writes a single line such that token_bytes begins at absolute position `split_offset`,
-    causing the token to be split across a BUF_SIZE boundary when split_offset == k*BUF_SIZE - r.
+    Writes a single line such that token_bytes begins at absolute position `split_offset`.
     Returns updated written.
     """
-    assert split_offset >= written
+    if split_offset < written:
+        raise RuntimeError(f"split_offset {split_offset} is behind current position {written}")
+
     nl_len = len(newline)
     max_content = MAX_LINE_TOTAL - nl_len
     token_len = len(token_bytes)
     assert token_len <= max_content
 
-    # Need filler_len = split_offset - written <= max_content - token_len
-    # => written >= split_offset - (max_content - token_len)
-    target_written = max(0, split_offset - (max_content - token_len))
-    written = advance_to(f, written, target_written, newline)
+    # We need filler_len = split_offset - line_start <= (max_content - token_len)
+    # Choose the earliest possible line_start, but never behind current 'written'.
+    line_start = max(written, split_offset - (max_content - token_len))
+
+    if line_start > split_offset:
+        raise RuntimeError("Cannot place token: computed line_start > split_offset")
+
+    if line_start != written:
+        written = advance_to(f, written, line_start, newline)
 
     filler_len = split_offset - written
     assert 0 <= filler_len <= (max_content - token_len)
@@ -207,6 +220,7 @@ def write_utf8_split_line_abs(f, written: int, split_offset: int, token_bytes: b
     content = fill_bytes(filler_len, b"C") + token_bytes
     written += write_line(f, content, newline)
     return written
+
 
 
 def make_utf8_split_file(path: Path, split_offsets: list[int], token: str, desc: str, manifest: list[str]) -> None:
@@ -226,31 +240,43 @@ def make_utf8_split_file(path: Path, split_offsets: list[int], token: str, desc:
 def make_eof_exact_multiple_of_buf_no_newline(path: Path, total_bytes: int, desc: str, manifest: list[str]) -> None:
     """
     File ends exactly at multiple of BUF_SIZE with NO final newline.
-    Keeps per-line max constraint by ensuring last line length <= MAX_LINE_TOTAL.
+    Keeps per-line max constraint by ensuring the final EOF line length <= MAX_LINE_TOTAL.
     """
     assert total_bytes % BUF_SIZE == 0
     ensure_dir(path)
     with path.open("wb") as f:
         written = 0
         newline = b"\n"
-        max_content = MAX_LINE_TOTAL - 1
+        max_line_with_nl = MAX_LINE_TOTAL          # 4096 (content+newline)
+        max_content_with_nl = MAX_LINE_TOTAL - 1   # 4095
+        max_eof_line = MAX_LINE_TOTAL              # 4096 bytes allowed at EOF with no newline
 
         # small seeds
         for _ in range(100):
             written += write_line(f, b"seed", newline)
 
-        # full 4096-byte lines
-        full_line_content = b"D" * max_content
-        full_line_bytes = max_content + 1
-
-        while written + full_line_bytes <= total_bytes - max_content:
-            written += write_line(f, full_line_content, newline)
-
-        # final line without newline to hit exact size
         remaining = total_bytes - written
-        assert 0 <= remaining <= max_content
-        f.write(fill_bytes(remaining, b"E"))
+        assert remaining >= 0
+
+        # Keep writing newline-terminated lines until what's left can be written as the final EOF line (<= 4096 bytes).
+        while remaining > max_eof_line:
+            # If we can consume a full 4096-byte line and still leave > 4096 for later, do that.
+            if remaining - max_line_with_nl >= max_eof_line:
+                written += write_line(f, b"D" * max_content_with_nl, newline)  # 4095 + '\n' = 4096
+            else:
+                # remaining is in (4096, 8191]. Write one shorter line that leaves exactly 4096 bytes for EOF tail.
+                consume = remaining - max_eof_line          # 1..4095 bytes INCLUDING '\n'
+                content_len = consume - 1                  # 0..4094 bytes of content
+                written += write_line(f, b"E" * content_len, newline)
+
+            remaining = total_bytes - written
+
+        # Final EOF line: write remaining bytes with NO newline (remaining <= 4096)
+        assert 0 <= remaining <= max_eof_line
+        f.write(fill_bytes(remaining, b"F"))
         written += remaining
+
+        assert written == total_bytes
 
     manifest_row(manifest, path.name, "LF(no-final-nl)", path.stat().st_size, desc)
 
