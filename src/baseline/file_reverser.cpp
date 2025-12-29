@@ -137,7 +137,7 @@ int main(int argc, char** argv) try
         seg_in.len_ = static_cast<std::size_t>(n);
         seg_in.off_ = 0;
 
-        if (n > 0)
+        if (n >= 0)
         {
             auto item = file_reverser::utilities::st::reverse_segment(seg_in, carry_seg_a, carry_seg_b);
 
