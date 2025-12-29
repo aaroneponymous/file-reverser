@@ -101,3 +101,21 @@ ls -1 "$latest/outputs" | head
 ```
 
 If you tell me which `BUF_BYTES` you’re running next (8192/131072/etc.), I can give you the exact `testsuite...` folder name to generate and the matching one-liner to run the suite.
+
+
+
+From `src/baseline/`, run it with the defaults (they already include the 1GiB file + correctness), and explicitly set `BUF_BYTES=4096`:
+
+```bash
+cd ~/Projects/cpp/file-reverser/src/baseline
+BUF_BYTES=4096 REPEATS=5 CHECK=1 SKIP_1G=0 SKIP_CHECK_1G=0 ./run_perf_suite.sh
+```
+
+That will:
+
+* run **all inputs including `36_huge_1GiB_...`**
+* run **correctness on every file including 1GiB**
+* use `--buf 4096`
+* collect perf stats with `-r 5`
+
+Tip: if you don’t want to repeat the 1GiB correctness 5 times worth of runtime noise, you can keep perf repeats at 5 but you’re still only checking correctness **once** per file (the script checks once).
