@@ -84,6 +84,5 @@ core.*
 # (ignore generated text + manifest inside test_suite inputs)
 # -----------------------------
 src/baseline/test_suite/input/**
-
-# If you also generate outputs beside inputs, uncomment:
+src/baseline/test_suite/runs/**
 src/baseline/test_suite/output/**

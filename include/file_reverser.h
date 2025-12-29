@@ -130,7 +130,19 @@ namespace file_reverser
                     carry.len_ += seg_recent.len_;
                     seg_recent.off_ = 0;
                     seg_recent.len_ = 0;
-                    return item_to_write; // seg_count_ == 0
+                    
+                    std::size_t to = carry.len_;
+                    std::span<std::byte> carry_span{ carry.buff_, carry.len_ };
+
+                    if (to > 0) reverse_range(carry_span, 0, to);
+
+                    auto& index_seg = item_to_write.seg_count_;
+                    item_to_write.seg_[index_seg++] = carry;        // carry copied into item to write - safe to reset the len_ and offset_ and swap with carry_backup next
+                    carry.len_ = carry.off_ = 0;
+                    std::swap(carry, carry_backup);
+
+                    return item_to_write;
+
                 }
                 
                 std::size_t prefix_size = (lf - seg_recent.buff_) + 1; // copy '\n' as well
@@ -210,7 +222,7 @@ namespace file_reverser
             auto& index_seg = item_to_write.seg_count_;
             item_to_write.seg_[index_seg++] = seg_recent;
 
-            return std::move(item_to_write);
+            return item_to_write;
         }        
     }
 
@@ -316,7 +328,8 @@ namespace file_reverser
             auto& index_seg = item_to_write.seg_count_;
             item_to_write.seg_[index_seg++] = seg_recent;
 
-            return std::move(item_to_write);
+            return item_to_write;
+
         }        
     }
 
