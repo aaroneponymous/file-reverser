@@ -86,7 +86,6 @@ constexpr std::size_t round_up(std::size_t n, std::size_t a) noexcept {
     return (a == 0) ? n : ((n + (a - 1)) / a) * a;
 }
 
-// C++17 name is std::hardware_destructive_interference_size (not "std::destructive_hardware_interferencesize").
 constexpr std::size_t cacheline_stride() noexcept {
 #if defined(__cpp_lib_hardware_interference_size)
     return std::hardware_destructive_interference_size;
