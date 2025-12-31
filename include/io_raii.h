@@ -17,6 +17,7 @@ namespace quantiq
     {
         public:
             io_raii() = default;
+            io_raii(const char* file_path) : path_{ file_path } {}
 
             ~io_raii() 
             {
@@ -38,11 +39,38 @@ namespace quantiq
 
                 is_open_ = true;
             }
-
             void wopen(const char* path)
             {
-                if (is_set()) throw std::logic_error("A file is already open\n");
+                if (is_set() || !path) throw std::logic_error("A file is already open or file path is null\n");
                 fd_ = ::open(path, O_WRONLY | O_APPEND | O_CREAT, 0644);
+
+                if (fd_ < 0)
+                {
+                    // handle errno (ENONENT, EACCES ...)
+                }
+
+                is_open_ = true;
+
+            }
+
+
+            void ropen_internal()
+            {
+                if (is_set() || !path_) throw std::logic_error("A file is already open or file path is null\n");
+                fd_ = ::open(path_, O_RDONLY);
+                
+                if (fd_ < 0)
+                {
+                    throw std::runtime_error("no file exists\n");
+                }
+
+                is_open_ = true;
+            }
+
+            void wopen_internal()
+            {
+                if (is_set() || !path_) throw std::logic_error("A file is already open or file path is null\n");
+                fd_ = ::open(path_, O_WRONLY | O_APPEND | O_CREAT, 0644);
 
                 if (fd_ < 0)
                 {
@@ -60,6 +88,8 @@ namespace quantiq
                 if (ret == -1) throw std::runtime_error("error on close\n");
                 is_open_ = false;
             }
+
+
 
             /** @read: 
              * - when reading from a regular file, if the end of file is reached
@@ -108,6 +138,7 @@ namespace quantiq
             int fd_{ -1 };
             bool is_open_{ false };
             bool eof_{ false };
+            const char* path_{ nullptr };
 
             bool is_set() const noexcept { return !(fd_ < 0); }
             bool is_open() const noexcept { return is_open_; }

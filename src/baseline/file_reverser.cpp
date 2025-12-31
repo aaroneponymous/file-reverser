@@ -1,7 +1,3 @@
-// file: src/baseline/file_reverser_main.cpp (or wherever you keep your entry point)
-//
-// Build: g++ -std=c++17 -O3 ... (your usual flags)
-
 #include <string>
 #include <iostream>
 #include <cstring>
