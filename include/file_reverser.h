@@ -36,8 +36,8 @@ namespace file_reverser
      *    1. Read In, 2. To Be Processed, or 3. Written To
      *    from a specified offset (off_)
      * 
-     *  @writeitem:
-     *  - struct WriteItem organizes and holds the components
+     *  @job:
+     *  - struct Job organizes and holds the components
      *    needed to perform a write to file
      * 
      *  - @members:
@@ -62,13 +62,13 @@ namespace file_reverser
         std::size_t off_{ };
     };
 
-    struct WriteItem
+    struct Job 
     {
-        Segment seg_[2];                   // size: 2 * 24 : 48 bytes
-        std::int8_t seg_count_{ };         // size: 1 byte - padding of 7 bytes
+        Segment seg_[2];
+        std::int8_t seg_count_{ };
 
-        WriteItem() = default;
-        WriteItem(const Segment& a, const Segment& b) : seg_count_{ 2 }
+        Job() = default;
+        Job(const Segment& a, const Segment& b) : seg_count_{ 2 }
         {
             seg_[0] = a;
             seg_[1] = b;
@@ -136,7 +136,7 @@ namespace file_reverser
     namespace utilities::st
     {
 
-        inline void handle_carry(std::byte* lf, Segment& seg_recent, Segment& carry, Segment& carry_backup, WriteItem& item_to_write) 
+        inline void handle_carry(std::byte* lf, Segment& seg_recent, Segment& carry, Segment& carry_backup, Job& item_to_write) 
         {
             std::size_t prefix_size = (lf - seg_recent.buff_) + 1; // copy '\n' as well
             std::memcpy( carry.buff_ + carry.len_, seg_recent.buff_, prefix_size );
@@ -166,7 +166,7 @@ namespace file_reverser
             seg_recent.off_ = prefix_size;
         }
 
-        inline void handle_carry_eof(Segment& seg_recent, Segment& carry, Segment& carry_backup, WriteItem& item_to_write) 
+        inline void handle_carry_eof(Segment& seg_recent, Segment& carry, Segment& carry_backup, Job& item_to_write) 
         {
             std::memcpy(carry.buff_ + carry.len_, seg_recent.buff_, seg_recent.len_);
             carry.len_ += seg_recent.len_;
@@ -184,7 +184,7 @@ namespace file_reverser
             std::swap(carry, carry_backup);
         }
 
-        inline void reverse_seg_recent(Segment& seg_recent, Segment& carry, Segment& carry_backup, WriteItem& item_to_write) 
+        inline void reverse_seg_recent(Segment& seg_recent, Segment& carry, Segment& carry_backup, Job& item_to_write) 
         {
 
             std::span<std::byte> seg_recent_span{ seg_recent.buff_ + seg_recent.off_ , seg_recent.len_ };
@@ -234,9 +234,9 @@ namespace file_reverser
 
         }
 
-        inline WriteItem reverse_segment(Segment& seg_recent, Segment& carry, Segment& carry_backup)
+        inline Job reverse_segment(Segment& seg_recent, Segment& carry, Segment& carry_backup)
         {
-            WriteItem item_to_write{ };
+            Job item_to_write{ };
             
             if (carry.len_ > 0)     // carry contains unprocessed trailing bytes from previous iteration
             {
@@ -262,12 +262,83 @@ namespace file_reverser
     
     }
 
-
     namespace utilities::mt
     {
+        void handle_carry();
+        void handle_eof();
+        void reverse_seg_in();
+
+        Job reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        {
+            Job write_job{ };
+
+            if (seg_carry.len_ > 0) // seg_carry contains unprocessed trailing bytes from previous iteration
+            {
+                auto *lf = static_cast<std::byte*>(
+                    std::memchr(seg_in.buff_, '\n', seg_in.len_)
+                );
+
+                /** @precondition: lf is only null if EOF (invariant max line with '\n' should be 4096 bytes) */
+                if (!lf)
+                {
+                    handle_eof();
+                    /** @todo: explicity manage write_job creation here */
+                    return write_job;
+                }
+
+                handle_carry();
+            }
+
+            reverse_seg_in();
+
+            /** @todo: explicitly manage write_job creation here */
+            return write_job;
+
+        }
+
+        
 
     
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /****************************** Memory Management & Allocation, and SPSCQ ******************************/
