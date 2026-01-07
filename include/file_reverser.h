@@ -12,22 +12,42 @@
 
 #ifdef __cpp_lib_hardware_interference_size
   #include <new>
-  inline constexpr std::size_t L1_SIZE =
+  inline constexpr std::size_t cacheline_size =
       std::hardware_destructive_interference_size;
 #else
-  inline constexpr std::size_t L1_SIZE = 64;
+  inline constexpr std::size_t cacheline_size = 64;
 #endif
 
 
 
 namespace file_reverser
 {
-
+    /**
+     * @review:
+     * 
+     * 1. Buffers & Two-Segment Forwarding
+     *    - total no. of buffers >= 3 && is always odd (used as carry buffer for the previous iteration)
+     *    - @perf: current approach utilizes half of (total buffers - 1) for reading
+     *       - carry buffers (forward-moving) might be under-utilized/empty based on input type
+     *    - @consequences:
+     * 
+     * 2. Reverse Invariant
+     *    - what happens if buffer size < 4096? 
+     *    - how does it impact carry?
+     * 
+     * 3. L1 Instruction Cache 32 Kib Awareness
+     * 
+     * 
+     * 4. Job Array --> Cache Invalidations upon Modifying Job Objects
+     *    - construct pairs of segments and Job items once, pushed on the write <---> read queue
+     *    - and utilize those instead of using a Job Array to pull from using id index
+     */
 
 /****************************** Buffer, Segments, and Reversal Logic ******************************/
 
-    /**  
-     *  @buffer:
+    /** @brief: Data Organization  
+     * 
+     * @buffer:
      *  - A buffer is encapsulated within the Segment struct
      * 
      *  @segment:
@@ -64,7 +84,7 @@ namespace file_reverser
 
     struct Job 
     {
-        // add unique id
+        /** @revist: add unique id (memory increase) */
         Segment seg_[2];
         std::int8_t seg_count_{ };
 
@@ -383,54 +403,45 @@ namespace file_reverser
                 curr_pos = lf + 1;
             }
         }
-
-        
-
-    
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /****************************** Memory Management & Allocation, and SPSCQ ******************************/
 
+    /** Memory Allocator & Memory Manager (RAII)
+     * 
+     * @responsibility:
+     * 
+     * @clients:
+     * 
+     * 1. raw byte buffers
+     * @count: ->  no. of buffers >= 3 && always odd (one of them is used as carry buffer for the previous iteration)
+     * @buff_size: -> buffer size ∈ { 1 Kib, 2 Kib, 4 Kib, 8 Kib, 16 Kib } -> optimize to fit within L1 Cache
+     * @layout:     aligned to cache line size ->   [ buff 0, buff 1, buff 3, ... buff n ]
+     * 
+     * 2. array of job structs  @revisit: refer code block @review: 4. Job Array for clarifications
+     * @seg_: seg_[] holds 2 segment objects -> seg_[0] : carry segment, seg_[1] : read-in segment
+     *       - segment struct is at most 3 * 8 -> 24 bytes in size
+     *       - seg_ --> 24 * 2 --> 48 bytes
+     * @seg_count_: size of seg_[] --> std::uint8_t
+     *       - seg_count_ --> 1 byte
+     * - total size --> 48 + 1 + 7 (padding alignof(Segment) which is 8)
+     * - total size --> 56 
+     * 
+     * 3. spsc lock-free queues
+     * - pointer
+     * 
+     * @approach:
+     *   - single chunk allocation for all the required components
+     *   - carve memory and delegate
+     */
+
+
+
+
+
+
+
+    /** @research: brace-initialization { } in ctor & class */
     template <typename T, typename Allocator = std::allocator<T>>
     class SPSC_LFQ
     {
@@ -526,7 +537,7 @@ namespace file_reverser
         size_type      cap_{};
         size_type      mask_{};
 
-        alignas(L1_SIZE) index_type read_{0};
-        alignas(L1_SIZE) index_type write_{0};
+        alignas(cacheline_size) index_type read_{0};
+        alignas(cacheline_size) index_type write_{0};
     };
 }
