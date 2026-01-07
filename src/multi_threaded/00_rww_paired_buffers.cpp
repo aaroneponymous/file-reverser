@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <syncstream>
 #include <string>
+#include <vector>
 
 #define sync_out std::osyncstream(std::cout)
 
@@ -56,20 +57,10 @@ int main()
     buff_arr block(raw, AlignedArrayDeleter{ std::align_val_t{ align } });
 
     using seg_struct = file_reverser::Segment;
-    using item_task = file_reverser::WriteItem;
-    using spscq_item = file_reverser::SPSC_LFQ<item_task>;
+    using item_task = file_reverser::Job;
+    using spscq_item = file_reverser::SPSC_LFQ<std::uint8_t>;
 
     const uint8_t queue_size = 16;
-
-    // auto buf_read_work = std::make_unique<seg_struct[]>(queue_size);
-    // auto buf_work_write = std::make_unique<seg_struct[]>(queue_size);
-    // auto buf_write_read = std::make_unique<seg_struct[]>(queue_size);
-
-
-    // auto buf_read_work = new seg_struct[queue_size];
-    // auto buf_work_write = new seg_struct[queue_size]; 
-    // auto buf_write_read = new seg_struct[queue_size]; 
-
 
 
     spscq_item q_read_work_{ queue_size };
@@ -82,13 +73,21 @@ int main()
 
     assert(q_write_read_.empty());
 
-    
-    for (std::size_t i{ }; i < buffer_in_flight; i += 2)
-    {
-        seg_struct in = { &raw[i], 0, 0 };
-        seg_struct carry = { &raw[i + 1], 0, 0 };
+    std::vector<item_task> job_arr;
 
-        if (!q_write_read_.emplace_push(item_task{ in, carry }))
+    // for (std::size_t i{ }; i < buffer_in_flight; i += 2)
+    // {
+
+    // }
+
+    
+    for (std::size_t i{ }, j{ }; i < buffer_in_flight; i += 2, ++j)
+    {
+        seg_struct carry = { &raw[i * stride], 0, 0 };
+        seg_struct in = { &raw[(i + 1) * stride], 0, 0 };
+        job_arr.push_back(item_task{ carry, in });
+
+        if (!q_write_read_.push(j))
         {
             throw std::invalid_argument("queue should not be getting full - pairs of item_to_write are less than the queue's capacity");
         }
@@ -115,7 +114,8 @@ int main()
     // auto read = [&](spscq_item& spscq, )
     auto read = [&](spscq_item& q_read_work, spscq_item& q_write_read)
     {
-        item_task read_item;
+        std::uint8_t job_index{ };
+        std::size_t bytes_written{ };
 
         while (true)
         {
@@ -125,31 +125,28 @@ int main()
                 write_read_cv.wait(lck, [&] { return !q_write_read.empty(); });
             }
 
-            // std::memset(read_item.seg_[0].buff_, 0, buffer_size);
-            // std::memset(read_item.seg_[1].buff_, 0, buffer_size);
+            if (!q_write_read.pop(job_index)) throw std::runtime_error("Read Thread: Pop Returned False\n");
+            auto& job_curr = job_arr[static_cast<std::size_t>(job_index)];
+            auto& seg_in = job_curr.seg_[job_curr.seg_count_ - 1];
 
-            q_write_read.pop(read_item);
+            assert(seg_in.len_ == 0);
 
-            auto& segment_in = read_item.seg_[1];
-            segment_in.len_ = io_input.read(segment_in.buff_, buffer_size);
+            seg_in.len_ = io_input.read(seg_in.buff_, buffer_size);
 
-            if (segment_in.len_ > 0)
-            {
-                std::string reversed(reinterpret_cast<char*>(segment_in.buff_), segment_in.len_);
-                sync_out << "\nRead String\n" << reversed << "\n\n";
-            }
+            // if (segment_in.len_ > 0)
+            // {
+            //     std::string reversed(reinterpret_cast<char*>(segment_in.buff_), segment_in.len_);
+            //     sync_out << "\nRead String\n" << reversed << "\n\n";
+            // }
 
-            sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Reader\n";
-            sync_out << "Item->Segment[0]: " << read_item.seg_[0].buff_ << " -> len_: " << read_item.seg_[0].len_ << ", off_: " << read_item.seg_[0].off_ << "\n";
-            sync_out << "Item->Segment[1]: " << read_item.seg_[1].buff_ << " -> len_: " << read_item.seg_[1].len_ << ", off_: " << read_item.seg_[1].off_ << "\n";
+            // sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Reader\n";
+            // sync_out << "Item->Segment[0]: " << read_item.seg_[0].buff_ << " -> len_: " << read_item.seg_[0].len_ << ", off_: " << read_item.seg_[0].off_ << "\n";
+            // sync_out << "Item->Segment[1]: " << read_item.seg_[1].buff_ << " -> len_: " << read_item.seg_[1].len_ << ", off_: " << read_item.seg_[1].off_ << "\n";
 
-
-
-            if (segment_in.len_ < 0) break;
 
             bool was_empty = q_read_work.empty();
             
-            if (q_read_work.push(read_item))
+            if (q_read_work.push(job_index))
             {
                 if (was_empty)
                 {
@@ -157,14 +154,14 @@ int main()
                 }
             }
 
-            if (segment_in.len_ <= 0) break;
+            if (seg_in.len_ <= 0) break;
         }
     };
 
 
-    auto work = [&](spscq_item& q_read_work, spscq_item& q_work_write, seg_struct carry_unique)
+    auto work = [&](spscq_item& q_read_work, spscq_item& q_work_write, seg_struct seg_carry_prev)
     {
-        item_task work_item;
+        std::uint8_t job_index{ };
 
         while (true)
         {
@@ -174,37 +171,26 @@ int main()
                 read_work_cv.wait(lck, [&] { return !q_read_work.empty(); });
             }
 
-            q_read_work.pop(work_item);
+            if (!q_read_work.pop(job_index)) throw std::runtime_error("Worker Thread: Pop Returned False\n");
 
-            sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Worker -> Before Processing\n";
-            sync_out << "Item->Segment[0]: " << work_item.seg_[0].buff_ << " -> len_: " << work_item.seg_[0].len_ << ", off_: " << work_item.seg_[0].off_ << "\n";
-            sync_out << "Item->Segment[1]: " << work_item.seg_[1].buff_ << " -> len_: " << work_item.seg_[1].len_ << ", off_: " << work_item.seg_[1].off_ << "\n";
+            // sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Worker -> Before Processing\n";
+            // sync_out << "Item->Segment[0]: " << work_item.seg_[0].buff_ << " -> len_: " << work_item.seg_[0].len_ << ", off_: " << work_item.seg_[0].off_ << "\n";
+            // sync_out << "Item->Segment[1]: " << work_item.seg_[1].buff_ << " -> len_: " << work_item.seg_[1].len_ << ", off_: " << work_item.seg_[1].off_ << "\n";
 
-            auto item = file_reverser::utilities::st::reverse_segment(work_item.seg_[1], work_item.seg_[0], carry_unique);
+            auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
+            auto& seg_carry = job_item.seg_[0];
+            auto& seg_in = job_item.seg_[1];
 
-            if (item.seg_[0].len_ > 0)
+            file_reverser::utilities::mt::reverse_segment(seg_in, seg_carry, seg_carry_prev);
+            if (seg_in.len_ == 0 && seg_carry.len_ > 0)
             {
-                std::string reversed(reinterpret_cast<char*>(item.seg_[0].buff_), item.seg_[0].len_);
-                sync_out << "\n\nReversed String\n" << reversed << "\n\n";
+                std::string reversed(reinterpret_cast<char*>(seg_carry.buff_), seg_carry.len_);
+                sync_out << "\nReversed String\n" << reversed << "\n\n";
             }
-
 
             bool was_empty = q_work_write.empty();
 
-
-            if (!item.seg_[1].buff_)
-            {
-                item.seg_[1] = work_item.seg_[0];
-                ++(item.seg_count_);
-            }
-
-            sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Worker -> After Processing\n";
-            sync_out << "Item->Segment[0]: " << item.seg_[0].buff_ << " -> len_: " << item.seg_[0].len_ << ", off_: " << item.seg_[0].off_ << "\n";
-            sync_out << "Item->Segment[1]: " << item.seg_[1].buff_ << " -> len_: " << item.seg_[1].len_ << ", off_: " << item.seg_[1].off_ << "\n";
-
-
-
-            if (q_work_write.push(item))
+            if (q_work_write.push(job_index))
             {
                 if (was_empty)
                 {
@@ -212,7 +198,25 @@ int main()
                 }
             }
 
-            if (work_item.seg_[1].len_ <= 0) break;
+            if (seg_in.len_ <= 0) break;
+
+            // if (item.seg_[0].len_ > 0)
+            // {
+            //     std::string reversed(reinterpret_cast<char*>(item.seg_[0].buff_), item.seg_[0].len_);
+            //     sync_out << "\n\nReversed String\n" << reversed << "\n\n";
+            // }
+
+
+
+            // if (!item.seg_[1].buff_)
+            // {
+            //     item.seg_[1] = work_item.seg_[0];
+            //     ++(item.seg_count_);
+            // }
+
+            // sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Worker -> After Processing\n";
+            // sync_out << "Item->Segment[0]: " << item.seg_[0].buff_ << " -> len_: " << item.seg_[0].len_ << ", off_: " << item.seg_[0].off_ << "\n";
+            // sync_out << "Item->Segment[1]: " << item.seg_[1].buff_ << " -> len_: " << item.seg_[1].len_ << ", off_: " << item.seg_[1].off_ << "\n";
 
         }
 
@@ -221,7 +225,8 @@ int main()
 
     auto write = [&](spscq_item& q_work_write, spscq_item& q_write_read)
     {
-        item_task write_item;
+        std::uint8_t job_index{ };
+        std::size_t bytes_written{ };
 
         while (true)
         {
@@ -231,38 +236,60 @@ int main()
                 work_write_cv.wait(lck, [&] { return !q_work_write.empty(); });
             }
 
-            q_work_write.pop(write_item);
+            if (!q_work_write.pop(job_index)) throw std::runtime_error("Writer Thread: Pop Returned False\n");
             
-            sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Writer -> Before Write\n";
-            sync_out << "Item->Segment[0]: " << write_item.seg_[0].buff_ << " -> len_: " << write_item.seg_[0].len_ << ", off_: " << write_item.seg_[0].off_ << "\n";
-            sync_out << "Item->Segment[1]: " << write_item.seg_[1].buff_ << " -> len_: " << write_item.seg_[1].len_ << ", off_: " << write_item.seg_[1].off_ << "\n";
+            // sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Writer -> Before Write\n";
+            // sync_out << "Item->Segment[0]: " << write_item.seg_[0].buff_ << " -> len_: " << write_item.seg_[0].len_ << ", off_: " << write_item.seg_[0].off_ << "\n";
+            // sync_out << "Item->Segment[1]: " << write_item.seg_[1].buff_ << " -> len_: " << write_item.seg_[1].len_ << ", off_: " << write_item.seg_[1].off_ << "\n";
 
-            if (write_item.seg_count_ > 0)
+            auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
+            auto& seg_carry = job_item.seg_[0];
+            auto& seg_in = job_item.seg_[1];
+
+            bytes_written += seg_carry.len_;
+            bytes_written += seg_in.len_;
+
+            if (bytes_written >= 20443)
+            {
+                // nothing
+            }
+
+
+            if ( (seg_carry.len_ == 0) ^ (seg_in.len_ == 0))
+            {
+                auto *buf = (seg_carry.len_ > 0) ? seg_carry.buff_ : seg_in.buff_;
+                std::size_t buf_len = (seg_carry.len_ > 0) ? seg_carry.len_ : seg_in.len_;
+                io_output.write(buf, buf_len);
+            }
+
+            if (seg_carry.len_ > 0 && seg_in.len_ > 0)
             {
                 iovec iov[2]{ };
-                for (auto i = 0; i < write_item.seg_count_; ++i)
+                for (auto i = 0; i < job_item.seg_count_; ++i)
                 {
-                    iov[i].iov_base = static_cast<void*>(write_item.seg_[i].buff_ + write_item.seg_[i].off_);
-                    iov[i].iov_len = write_item.seg_[i].len_;
+                    iov[i].iov_base = static_cast<void*>(job_item.seg_[i].buff_ + job_item.seg_[i].off_);
+                    iov[i].iov_len = job_item.seg_[i].len_;
                 }
 
-                io_output.writeall_v(iov, write_item.seg_count_);
+                io_output.writeall_v(iov, job_item.seg_count_);
             }
 
-            if (write_item.seg_[1].len_ <= 0) break;
 
-            for (auto i = 0; i < write_item.seg_count_; ++i)
+            if (seg_in.len_ <= 0) break;
+
+            for (auto i = 0; i < job_item.seg_count_; ++i)
             {
-                write_item.seg_[i].len_ = 0;
-                write_item.seg_[i].off_ = 0;
+                job_item.seg_[i].len_ = 0;
+                job_item.seg_[i].off_ = 0;
+                // std::memset(job_item.seg_[i].buff_, 0, buffer_size);
             }
             
-            std::memset(write_item.seg_[0].buff_, 0, buffer_size);
-            std::memset(write_item.seg_[1].buff_, 0, buffer_size);
+            // std::memset(write_item.seg_[0].buff_, 0, buffer_size);
+            // std::memset(write_item.seg_[1].buff_, 0, buffer_size);
 
             bool was_empty = q_write_read.empty();
 
-            if (q_write_read.push(write_item))
+            if (q_write_read.push(job_index))
             {
                 if (was_empty)
                 {

@@ -64,6 +64,7 @@ namespace file_reverser
 
     struct Job 
     {
+        // add unique id
         Segment seg_[2];
         std::int8_t seg_count_{ };
 
@@ -262,38 +263,125 @@ namespace file_reverser
     
     }
 
+    /** @note: Job should contain ID index to array of Segments */
+
     namespace utilities::mt
     {
-        void handle_carry();
-        void handle_eof();
-        void reverse_seg_in();
-
-        Job reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        void handle_eof(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
-            Job write_job{ };
+            /**
+             * @invariant:
+             * - necessitates that if seg_carry.len_ > 0 i.e. there's some trailing bytes
+             *   and seg_in doesn't contain '\n' then seg_in.len_ must be == 0
+             * - seg_in.buff being empty marks EOF
+             * 
+             * @precondition:
+             * - seg_carry buffer doesn't contain '\r\n' or '\n'
+             * - therefore can reverse the entire buffer without
+             *   checking for those special characters
+            */               
 
-            if (seg_carry.len_ > 0) // seg_carry contains unprocessed trailing bytes from previous iteration
+            assert(seg_in.len_ <= 0);
+
+            std::span<std::byte> carry_span{ seg_carry_prev.buff_, seg_carry_prev.len_ };
+            std::size_t to = carry_span.size();
+
+            if (!reverse_range(carry_span, seg_carry_prev.off_, to)) {
+                throw std::runtime_error("reverse_range false: malformed UTF-8 or code point split");
+            }
+
+            assert(seg_carry.len_ <= 0);
+            assert(seg_carry.off_ <= 0);
+
+            // buffer in seg_carry_prev is reversed
+            // swap with seg_carry for forwarding
+            std::swap(seg_carry, seg_carry_prev); 
+        }
+
+        void handle_carry(std::byte* lf, Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        {
+            std::size_t prefix_size = (lf - seg_in.buff_) + 1; // copy '\n' as well
+            std::memcpy( seg_carry_prev.buff_ + seg_carry_prev.len_, seg_in.buff_, prefix_size);
+            seg_carry_prev.len_ += prefix_size;
+
+            assert(seg_carry_prev.off_ <= 0);
+            assert(seg_carry.len_ <= 0);
+            assert(seg_carry.off_ <= 0);
+            assert(lf >= seg_in.buff_);
+            assert(seg_carry_prev.buff_[seg_carry_prev.len_ - 1] == std::byte{ 0x0A });
+
+            // safety guard aroun len_ - 1 (prevents underflow if assumptions ever break)
+            std::size_t to = (seg_carry_prev.len_ >= 1) ? (seg_carry_prev.len_ - 1) : 0;
+            if (to > 0 && seg_carry_prev.buff_[to - 1] == std::byte{ 0x0D }) --to;
+            std::span<std::byte> carry_prev_span{ seg_carry_prev.buff_, seg_carry_prev.len_ };
+
+            if (!reverse_range(carry_prev_span, 0, to)) {
+                throw std::runtime_error("reverse_range false: malformed UTF-8 or code point split");
+            }
+
+            seg_in.len_ -= prefix_size;
+            seg_in.off_ = prefix_size;
+
+            std::swap(seg_carry, seg_carry_prev);
+
+        }
+
+        void reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        {
+            // if (both len < 0 return)
+            if (seg_carry_prev.len_ > 0) // seg_carry contains unprocessed trailing bytes from previous iteration
             {
                 auto *lf = static_cast<std::byte*>(
                     std::memchr(seg_in.buff_, '\n', seg_in.len_)
                 );
 
                 /** @precondition: lf is only null if EOF (invariant max line with '\n' should be 4096 bytes) */
-                if (!lf)
-                {
-                    handle_eof();
-                    /** @todo: explicity manage write_job creation here */
-                    return write_job;
+                if (!lf) {
+                    handle_eof(seg_in, seg_carry, seg_carry_prev);
+                    return;
                 }
 
-                handle_carry();
+                handle_carry(lf, seg_in, seg_carry, seg_carry_prev);
             }
 
-            reverse_seg_in();
+            std::span<std::byte> seg_in_span{ seg_in.buff_ + seg_in.off_, seg_in.len_ };
+            const std::byte *span_base_ptr = seg_in_span.data();
+            const std::size_t pos_end = seg_in_span.size();
 
-            /** @todo: explicitly manage write_job creation here */
-            return write_job;
+            std::size_t curr_pos{ };
 
+            while (curr_pos < pos_end)
+            {
+                auto* lf_next = static_cast<std::byte*>(
+                    std::memchr(static_cast<void*>(&seg_in_span[curr_pos]), '\n', pos_end - curr_pos)
+                );
+
+                if (!lf_next)
+                {
+                    // carry over seg_carry_prev as we forward seg_carry
+
+                    const std::size_t tail = pos_end - curr_pos;
+                    // != curr_pos + 1
+                    seg_in.len_ = curr_pos;  // curr_pos is 1 position after last '\n' --> bytes to write excludes curr_pos
+                    std::memcpy(seg_carry_prev.buff_, seg_in_span.data() + curr_pos, tail);
+                    seg_carry_prev.off_ = 0;
+                    seg_carry_prev.len_ = tail;
+
+                    break;
+                }
+
+                const std::size_t lf = static_cast<std::size_t>(lf_next - span_base_ptr);
+                assert(lf >= curr_pos && lf < pos_end);
+
+                std::size_t end = lf; // excludes '/n' for reversal
+                if (end > curr_pos && seg_in_span[end - 1] == std::byte{ 0x0D }) --end; // carriage '\r\n'
+                if (!reverse_range(seg_in_span, curr_pos, end))
+                {
+                    throw std::runtime_error("reverse_range false: malformed UTF-8 or code point split");
+                }
+
+                curr_pos = lf + 1;
+            }
         }
 
         
@@ -442,178 +530,3 @@ namespace file_reverser
         alignas(L1_SIZE) index_type write_{0};
     };
 }
-
-    // template <typename T>
-    // class SPSC_LFQ
-    // {
-    // public:
-    //     static_assert(std::is_trivially_copyable_v<T>,
-    //                 "This SPSC_LFQ assumes trivially copyable T (client provides T[cap]).");
-
-    //     using value_type = T;
-    //     using size_type  = std::uint8_t;
-    //     using index_type = std::atomic<size_type>;
-    //     using pointer = T*;
-
-    //     explicit SPSC_LFQ(T* queue_buff, size_type capacity) :
-    //             queue_{ queue_buff }, cap_{ capacity }
-    //     {
-
-    //         if (cap_ < 2 || (cap_ & (cap_ - 1)) != 0) {
-    //             throw std::invalid_argument("capacity must be >= 2 and a power of 2");
-    //         }
-    //         mask_ = static_cast<size_type>(cap_ - 1);
-    //     }
-
-    //     bool push(const T& item) noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_relaxed);
-    //         auto write_next = static_cast<size_type>((write + 1) & mask_);
-
-    //         if (write_next == read_.load(std::memory_order_acquire)) return false;
-
-    //         queue_[write] = item;
-    //         write_.store(write_next, std::memory_order_release);
-    //         return true;
-    //     }
-
-    //     template <class... Args>
-    //     bool emplace_push(Args&&... args) noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_relaxed);
-    //         auto write_next = static_cast<size_type>((write + 1) & mask_);
-
-    //         if (write_next == read_.load(std::memory_order_acquire)) return false;
-
-    //         queue_[write] = T{ std::forward<Args>(args)... };
-    //         write_.store(write_next, std::memory_order_release);
-    //         return true;
-    //     }
-
-    //     bool pop(T& item) noexcept
-    //     {
-    //         auto read = read_.load(std::memory_order_relaxed);
-    //         if (read == write_.load(std::memory_order_acquire)) return false;
-
-    //         item = queue_[read];
-
-    //         auto read_next = static_cast<size_type>((read + 1) & mask_);
-    //         read_.store(read_next, std::memory_order_release);
-    //         return true;
-    //     }
-
-    //     [[nodiscard]] bool full() const noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_relaxed);
-    //         auto write_next = static_cast<size_type>((write + 1) & mask_);
-    //         return write_next == read_.load(std::memory_order_acquire);
-    //     }
-
-    //     [[nodiscard]] std::size_t size() const noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_acquire);
-    //         auto read  = read_.load(std::memory_order_acquire);
-    //         return static_cast<std::size_t>((write - read) & mask_);
-    //     }
-
-    //     [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-
-    // private:
-    //     pointer   queue_{ };
-    //     size_type cap_{ };
-    //     size_type mask_{ };
-
-    //     alignas(L1_SIZE) index_type read_{ 0 };
-    //     alignas(L1_SIZE) index_type write_{ 0 };
-    // };
-
-    // template <typename T>
-    // class SPSC_LFQ
-    // {
-    // public:
-    //     static_assert(std::is_trivially_copyable_v<T>,
-    //                 "This SPSC_LFQ assumes trivially copyable T (client provides T[cap]).");
-
-    //     using value_type = T;
-    //     using size_type  = std::uint8_t;
-    //     using index_type = std::atomic<size_type>;
-
-    //     using pointer = T*;
-
-    //     explicit SPSC_LFQ(T* queue_buffer, size_type capacity)
-    //         : queue_{ queue_buffer }
-    //         , cap_{ capacity }
-    //     {
-    //         if (!queue_) {
-    //             throw std::invalid_argument("queue_buffer must not be null");
-    //         }
-    //         if (cap_ < 2 || (cap_ & (cap_ - 1)) != 0) {
-    //             throw std::invalid_argument("capacity must be >= 2 and a power of 2");
-    //         }
-    //         mask_ = static_cast<size_type>(cap_ - 1);
-    //     }
-
-    //     bool push(const T& item) noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_relaxed);
-    //         auto write_next = static_cast<size_type>((write + 1) & mask_);
-
-    //         if (write_next == read_.load(std::memory_order_acquire)) return false;
-
-    //         queue_[write] = item;
-    //         write_.store(write_next, std::memory_order_release);
-    //         return true;
-    //     }
-
-    //     template <class... Args>
-    //     bool emplace_push(Args&&... args) noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_relaxed);
-    //         auto write_next = static_cast<size_type>((write + 1) & mask_);
-
-    //         if (write_next == read_.load(std::memory_order_acquire)) return false;
-
-    //         queue_[write] = T{ std::forward<Args>(args)... };
-    //         write_.store(write_next, std::memory_order_release);
-    //         return true;
-    //     }
-
-    //     bool pop(T& item) noexcept
-    //     {
-    //         auto read = read_.load(std::memory_order_relaxed);
-    //         if (read == write_.load(std::memory_order_acquire)) return false;
-
-    //         item = queue_[read];
-
-    //         auto read_next = static_cast<size_type>((read + 1) & mask_);
-    //         read_.store(read_next, std::memory_order_release);
-    //         return true;
-    //     }
-
-    //     [[nodiscard]] bool full() const noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_relaxed);
-    //         auto write_next = static_cast<size_type>((write + 1) & mask_);
-    //         return write_next == read_.load(std::memory_order_acquire);
-    //     }
-
-    //     [[nodiscard]] std::size_t size() const noexcept
-    //     {
-    //         auto write = write_.load(std::memory_order_acquire);
-    //         auto read  = read_.load(std::memory_order_acquire);
-    //         return static_cast<std::size_t>((write - read) & mask_);
-    //     }
-
-    //     [[nodiscard]] bool empty() const noexcept { return size() == 0; }
-
-    // private:
-    //     pointer   queue_{ nullptr };
-    //     size_type cap_{ 0 };
-    //     size_type mask_{ 0 };
-
-    //     alignas(L1_SIZE) index_type read_{ 0 };
-    //     alignas(L1_SIZE) index_type write_{ 0 };
-    // };
-
-
-/****************************** Threads & Processing ******************************/
