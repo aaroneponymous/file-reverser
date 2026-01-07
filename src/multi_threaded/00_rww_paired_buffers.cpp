@@ -37,10 +37,10 @@ struct AlignedArrayDeleter
 
 
 
-int main()
+int main(int argc, char* argv[])
 {
-    std::string in_path{ "../input/hamlet.txt" };
-    std::string out_path{ "../output/hamlet.txt" };
+    std::string in_path(argv[1]);
+    std::string out_path(argv[2]);
 
 
     const std::size_t buffer_size{ 4096 };
@@ -115,7 +115,6 @@ int main()
     auto read = [&](spscq_item& q_read_work, spscq_item& q_write_read)
     {
         std::uint8_t job_index{ };
-        std::size_t bytes_written{ };
 
         while (true)
         {
@@ -182,11 +181,11 @@ int main()
             auto& seg_in = job_item.seg_[1];
 
             file_reverser::utilities::mt::reverse_segment(seg_in, seg_carry, seg_carry_prev);
-            if (seg_in.len_ == 0 && seg_carry.len_ > 0)
-            {
-                std::string reversed(reinterpret_cast<char*>(seg_carry.buff_), seg_carry.len_);
-                sync_out << "\nReversed String\n" << reversed << "\n\n";
-            }
+            // if (seg_in.len_ == 0 && seg_carry.len_ > 0)
+            // {
+            //     std::string reversed(reinterpret_cast<char*>(seg_carry.buff_), seg_carry.len_);
+            //     sync_out << "\nReversed String\n" << reversed << "\n\n";
+            // }
 
             bool was_empty = q_work_write.empty();
 
@@ -226,7 +225,6 @@ int main()
     auto write = [&](spscq_item& q_work_write, spscq_item& q_write_read)
     {
         std::uint8_t job_index{ };
-        std::size_t bytes_written{ };
 
         while (true)
         {
@@ -245,14 +243,6 @@ int main()
             auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_carry = job_item.seg_[0];
             auto& seg_in = job_item.seg_[1];
-
-            bytes_written += seg_carry.len_;
-            bytes_written += seg_in.len_;
-
-            if (bytes_written >= 20443)
-            {
-                // nothing
-            }
 
 
             if ( (seg_carry.len_ == 0) ^ (seg_in.len_ == 0))
@@ -302,7 +292,7 @@ int main()
 
 
     {
-        seg_struct seg_carry_unique = { &raw[buffer_count - 1], 0, 0 };
+        seg_struct seg_carry_unique = { &raw[(buffer_count - 1) * stride], 0, 0 };
 
         std::jthread reader_thread{ read, std::ref(q_read_work_), std::ref(q_write_read_) };
         std::jthread worker_thread{ work, std::ref(q_read_work_), std::ref(q_work_write_), seg_carry_unique };
