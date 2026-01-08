@@ -45,8 +45,8 @@ int main(int argc, char* argv[])
     std::string out_path(argv[2]);
 
 
-    const std::size_t buffer_size{ 8192 };
-    const std::size_t buffer_count{ 9 };
+    const std::size_t buffer_size{ 4096 };
+    const std::size_t buffer_count{ 11 };
     const std::size_t buffer_in_flight{ buffer_count - 1 };
 
     const std::size_t align = std::max<std::size_t>(cacheline_stride(), alignof(std::max_align_t));
