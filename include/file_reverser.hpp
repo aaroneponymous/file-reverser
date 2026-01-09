@@ -8,19 +8,12 @@
 #include <ranges>
 #include <iostream>
 #include <atomic>
-
-#ifdef __cpp_lib_hardware_interference_size
-  #include <new>
-  inline constexpr std::size_t cacheline_size =
-      std::hardware_destructive_interference_size;
-#else
-  inline constexpr std::size_t cacheline_size = 64;
-#endif
-
+#include "linear_allocator.hpp"
 
 
 namespace file_reverser
 {
+    using namespace memory_mgr;
     /**
      * @review:
      * 
@@ -286,7 +279,6 @@ namespace file_reverser
     }
 
     /** @note: Job should contain ID index to array of Segments */
-
     namespace utilities::mt
     {
         void handle_eof(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
@@ -438,9 +430,10 @@ namespace file_reverser
      */
 
 
-
-
-
+    constexpr std::size_t round_up(std::size_t n, std::size_t a) noexcept
+    {
+        return (a == 0) ? n : ((n + (a - 1)) / a) * a;
+    }
 
 
     /** @research: brace-initialization { } in ctor & class */
@@ -539,7 +532,7 @@ namespace file_reverser
         size_type      cap_{};
         size_type      mask_{};
 
-        alignas(cacheline_size) index_type read_{0};
-        alignas(cacheline_size) index_type write_{0};
+        alignas(cache_line_size) index_type read_{0};
+        alignas(cache_line_size) index_type write_{0};
     };
 }

@@ -119,13 +119,13 @@ int main(int argc, char* argv[])
         {
             /** @performance: accessing acquire - acquire 
              *  synchronization required each time empty() called */
-            if (q_write_read.empty())
+            if (!q_write_read.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(write_read_mtx);
                 write_read_cv.wait(lck, [&] { return !q_write_read.empty(); });
+                q_write_read.pop(job_index);
             }
 
-            if (!q_write_read.pop(job_index)) throw std::runtime_error("Read Thread: Pop Returned False\n");
             auto& job_curr = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_in = job_curr.seg_[job_curr.seg_count_ - 1];
 
@@ -144,14 +144,10 @@ int main(int argc, char* argv[])
             // sync_out << "Item->Segment[1]: " << read_item.seg_[1].buff_ << " -> len_: " << read_item.seg_[1].len_ << ", off_: " << read_item.seg_[1].off_ << "\n";
 
 
-            bool was_empty = q_read_work.empty();
             
             if (q_read_work.push(job_index))
             {
-                if (was_empty)
-                {
-                    read_work_cv.notify_one();
-                }
+                read_work_cv.notify_one();
             }
 
             if (seg_in.len_ <= 0) break;
@@ -165,13 +161,14 @@ int main(int argc, char* argv[])
 
         while (true)
         {
-            if (q_read_work.empty())
+            if (!q_read_work.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(read_work_mtx);
                 read_work_cv.wait(lck, [&] { return !q_read_work.empty(); });
+                q_read_work.pop(job_index);
             }
 
-            if (!q_read_work.pop(job_index)) throw std::runtime_error("Worker Thread: Pop Returned False\n");
+            // if (!q_read_work.pop(job_index)) throw std::runtime_error("Worker Thread: Pop Returned False\n");
 
             // sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Worker -> Before Processing\n";
             // sync_out << "Item->Segment[0]: " << work_item.seg_[0].buff_ << " -> len_: " << work_item.seg_[0].len_ << ", off_: " << work_item.seg_[0].off_ << "\n";
@@ -188,14 +185,10 @@ int main(int argc, char* argv[])
             //     sync_out << "\nReversed String\n" << reversed << "\n\n";
             // }
 
-            bool was_empty = q_work_write.empty();
 
             if (q_work_write.push(job_index))
             {
-                if (was_empty)
-                {
-                    work_write_cv.notify_one();
-                }
+                work_write_cv.notify_one();
             }
 
             if (seg_in.len_ <= 0) break;
@@ -229,13 +222,14 @@ int main(int argc, char* argv[])
 
         while (true)
         {
-            if (q_work_write.empty())
+            if (!q_work_write.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(work_write_mtx);
                 work_write_cv.wait(lck, [&] { return !q_work_write.empty(); });
+                q_work_write.pop(job_index);
             }
 
-            if (!q_work_write.pop(job_index)) throw std::runtime_error("Writer Thread: Pop Returned False\n");
+            // if (!q_work_write.pop(job_index)) throw std::runtime_error("Writer Thread: Pop Returned False\n");
             
             // sync_out << "\nThread[" << std::this_thread::get_id() << "]: " << "Writer -> Before Write\n";
             // sync_out << "Item->Segment[0]: " << write_item.seg_[0].buff_ << " -> len_: " << write_item.seg_[0].len_ << ", off_: " << write_item.seg_[0].off_ << "\n";
@@ -278,14 +272,9 @@ int main(int argc, char* argv[])
             // std::memset(write_item.seg_[0].buff_, 0, buffer_size);
             // std::memset(write_item.seg_[1].buff_, 0, buffer_size);
 
-            bool was_empty = q_write_read.empty();
-
             if (q_write_read.push(job_index))
             {
-                if (was_empty)
-                {
-                    write_read_cv.notify_one();
-                }
+                write_read_cv.notify_one();
             }
 
         }
