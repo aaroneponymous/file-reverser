@@ -10,6 +10,8 @@
 #include <atomic>
 #include "linear_allocator.hpp"
 
+#define LINE_SIZE 4096
+
 
 namespace file_reverser
 {
