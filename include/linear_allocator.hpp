@@ -1,7 +1,7 @@
 
 
 /**
- * @file LinearAllocator.h
+ * @file  LinearAllocator.h
  * @brief Overview of the memory system and the LinearAllocator interface.
  *
  * The memory system manages allocation and deallocation of instances through
@@ -44,7 +44,6 @@
  *  };
  * @endcode
  */
-
 
 /**
  * @class LinearAllocator
@@ -114,7 +113,7 @@
  * no wasted memory, while maintaining deterministic behavior.
  */
 
-
+#pragma once
 #include <cstdint>
 #include <cstddef>
 #include <memory>
@@ -132,7 +131,6 @@
 
 namespace memory_mgr
 {
-
     template <std::size_t Align>
     struct AlignedDeleter
     {
