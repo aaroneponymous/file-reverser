@@ -138,6 +138,7 @@ int main(int argc, char* argv[])
 
             auto bytes_read = io_input.read(seg_in.buff_, buffer_size);
             seg_in.len_ = bytes_read;
+            if (bytes_read <= 0) seg_in.end_ = 1;
 
             if (q_read_work.push(job_index)) read_work_cv.notify_one();
 
@@ -163,12 +164,13 @@ int main(int argc, char* argv[])
             auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_carry = job_item.seg_[0];
             auto& seg_in = job_item.seg_[1];
+            auto seg_end { seg_in.end_ };
 
-            auto bytes_read = seg_in.len_;
+            // auto bytes_read = seg_in.len_;
             file_reverser::utilities::mt::reverse_segment(seg_in, seg_carry, seg_carry_prev);
             if (q_work_write.push(job_index)) work_write_cv.notify_one();
 
-            if (bytes_read <= 0) break;
+            if (seg_end) break;
         }
     };
 
@@ -213,7 +215,7 @@ int main(int argc, char* argv[])
                 ++written;
             }
 
-            if (seg_in.len_ <= 0) break;
+            if (seg_in.end_) break;
             for (auto i = 0; i < job_item.seg_count_; ++i)
             {
                 job_item.seg_[i].len_ = 0;
@@ -221,7 +223,7 @@ int main(int argc, char* argv[])
             }
 
             if (q_write_read.push(job_index)) write_read_cv.notify_one();
-            sync_out << "No Writes: " << written << std::endl;
+            // sync_out << "No Writes: " << written << std::endl;
         }
     };
 

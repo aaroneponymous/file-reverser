@@ -76,6 +76,7 @@ namespace file_reverser
         std::byte* buff_{ nullptr };
         std::size_t len_{ };
         std::size_t off_{ };
+        std::int64_t end_{ 0 };
     };
 
     struct Job 
