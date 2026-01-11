@@ -137,6 +137,8 @@ int main(int argc, char* argv[])
             auto& seg_in = job_curr.seg_[1];
 
             auto bytes_read = io_input.read(seg_in.buff_, buffer_size);
+            seg_in.len_ = bytes_read;
+
             if (q_read_work.push(job_index)) read_work_cv.notify_one();
 
             if (bytes_read <= 0) {
@@ -173,6 +175,8 @@ int main(int argc, char* argv[])
     auto write = [&](spscq_item& q_work_write, spscq_item& q_write_read)
     {
         std::uint8_t job_index{ };
+        std::size_t written{ 1 };
+        --written;
 
         while (true)
         {
@@ -188,11 +192,12 @@ int main(int argc, char* argv[])
             auto seg_carry_len = seg_carry.len_;
             auto seg_in_len = seg_in.len_;
 
-            if ( (seg_in_len == 0) ^ (seg_in_len == 0))
+            if ( (seg_in_len == 0) ^ (seg_carry_len == 0))
             {
-                auto *buf = (seg_in_len > 0) ? seg_carry.buff_ : seg_in.buff_;
-                std::size_t buf_len = (seg_carry_len > 0) ? seg_carry_len : seg_in_len;
+                auto *buf = (seg_in_len > 0) ? seg_in.buff_ : seg_carry.buff_;
+                std::size_t buf_len = (seg_in_len > 0) ? seg_in_len : seg_carry_len;
                 io_output.write(buf, buf_len);
+                ++written;
             }
 
             if (seg_carry_len > 0 && seg_in_len > 0)
@@ -205,6 +210,7 @@ int main(int argc, char* argv[])
                 }
 
                 io_output.writeall_v(iov, job_item.seg_count_);
+                ++written;
             }
 
             if (seg_in.len_ <= 0) break;
@@ -215,6 +221,7 @@ int main(int argc, char* argv[])
             }
 
             if (q_write_read.push(job_index)) write_read_cv.notify_one();
+            sync_out << "No Writes: " << written << std::endl;
         }
     };
 
