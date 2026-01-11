@@ -2,8 +2,6 @@
 #include "../../include/io_raii.hpp"
 #include "../../include/spsc_lockfree_q.hpp"
 #include <string>
-#include <memory>
-#include <new>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -123,11 +121,8 @@ int main(int argc, char* argv[])
     std::mutex write_read_mtx;
     std::condition_variable write_read_cv;
 
-    sync_out << "Main Thread: " << std::this_thread::get_id() << "\n";
-
     auto read = [&](spscq_item& q_read_work, spscq_item& q_write_read)
     {
-        sync_out << "\nReader Thread: " << std::this_thread::get_id() << "\n\n";
         std::uint8_t job_index{ };
 
         while (true)
@@ -151,7 +146,6 @@ int main(int argc, char* argv[])
 
     auto work = [&](spscq_item& q_read_work, spscq_item& q_work_write, seg_struct seg_carry_prev)
     {
-        sync_out << "\nWorker Thread: " << std::this_thread::get_id() << "\n\n";
         std::uint8_t job_index{ };
 
         while (true)
@@ -175,7 +169,6 @@ int main(int argc, char* argv[])
 
     auto write = [&](spscq_item& q_work_write, spscq_item& q_write_read)
     {
-        sync_out << "\nWriter Thread: " << std::this_thread::get_id() << "\n\n";
         std::uint8_t job_index{ };
 
         while (true)

@@ -5,7 +5,6 @@
 #include <cassert>
 #include <span>
 #include <algorithm>
-#include <ranges>
 #include <iostream>
 #include <atomic>
 #include "linear_allocator.hpp"
@@ -283,7 +282,7 @@ namespace file_reverser
     /** @note: Job should contain ID index to array of Segments */
     namespace utilities::mt
     {
-        void handle_eof(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        inline void handle_eof(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
             /**
              * @invariant:
@@ -314,7 +313,7 @@ namespace file_reverser
             std::swap(seg_carry, seg_carry_prev); 
         }
 
-        void handle_carry(std::byte* lf, Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        inline void handle_carry(std::byte* lf, Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
             std::size_t prefix_size = (lf - seg_in.buff_) + 1; // copy '\n' as well
             std::memcpy( seg_carry_prev.buff_ + seg_carry_prev.len_, seg_in.buff_, prefix_size);
@@ -342,7 +341,7 @@ namespace file_reverser
 
         }
 
-        void reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        inline void reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
             // if (both len < 0 return)
             if (seg_carry_prev.len_ > 0) // seg_carry contains unprocessed trailing bytes from previous iteration
@@ -451,7 +450,7 @@ namespace file_reverser
         using index_type      = std::atomic<size_type>;
         using allocator_type  = Allocator;
         using alloc_traits    = std::allocator_traits<allocator_type>;
-        using pointer         = typename alloc_traits::pointer; // typically T*
+        using pointer         = alloc_traits::pointer; // typically T*
 
         explicit SPSC_LFQ(size_type capacity, const allocator_type& alloc = allocator_type())
             : alloc_(alloc), cap_(capacity)
