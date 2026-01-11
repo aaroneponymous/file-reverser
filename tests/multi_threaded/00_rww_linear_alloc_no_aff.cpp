@@ -127,7 +127,6 @@ int main(int argc, char* argv[])
 
         while (true)
         {
-            job_index = q_write_read.pop(job_index);
             if (!q_write_read.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(write_read_mtx);
@@ -135,11 +134,14 @@ int main(int argc, char* argv[])
             }
             
             auto& job_curr = job_arr[static_cast<std::size_t>(job_index)];
-            auto& seg_in = job_curr.seg_[job_curr.seg_count_ - 1];
-            seg_in.len_ = io_input.read(seg_in.buff_, buffer_size);
+            auto& seg_in = job_curr.seg_[1];
 
+            auto bytes_read = io_input.read(seg_in.buff_, buffer_size);
             if (q_read_work.push(job_index)) read_work_cv.notify_one();
-            if (seg_in.len_ <= 0) break;
+
+            if (bytes_read <= 0) {
+                break;
+            }
         }
 
     };
@@ -160,10 +162,11 @@ int main(int argc, char* argv[])
             auto& seg_carry = job_item.seg_[0];
             auto& seg_in = job_item.seg_[1];
 
+            auto bytes_read = seg_in.len_;
             file_reverser::utilities::mt::reverse_segment(seg_in, seg_carry, seg_carry_prev);
-
             if (q_work_write.push(job_index)) work_write_cv.notify_one();
-            if (seg_in.len_ <= 0) break;
+
+            if (bytes_read <= 0) break;
         }
     };
 
@@ -182,15 +185,17 @@ int main(int argc, char* argv[])
             auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_carry = job_item.seg_[0];
             auto& seg_in = job_item.seg_[1];
+            auto seg_carry_len = seg_carry.len_;
+            auto seg_in_len = seg_in.len_;
 
-            if ( (seg_carry.len_ == 0) ^ (seg_in.len_ == 0))
+            if ( (seg_in_len == 0) ^ (seg_in_len == 0))
             {
-                auto *buf = (seg_carry.len_ > 0) ? seg_carry.buff_ : seg_in.buff_;
-                std::size_t buf_len = (seg_carry.len_ > 0) ? seg_carry.len_ : seg_in.len_;
+                auto *buf = (seg_in_len > 0) ? seg_carry.buff_ : seg_in.buff_;
+                std::size_t buf_len = (seg_carry_len > 0) ? seg_carry_len : seg_in_len;
                 io_output.write(buf, buf_len);
             }
 
-            if (seg_carry.len_ > 0 && seg_in.len_ > 0)
+            if (seg_carry_len > 0 && seg_in_len > 0)
             {
                 iovec iov[2]{ };
                 for (auto i = 0; i < job_item.seg_count_; ++i)

@@ -378,6 +378,7 @@ namespace file_reverser
                     const std::size_t tail = pos_end - curr_pos;
                     // != curr_pos + 1
                     seg_in.len_ = curr_pos;  // curr_pos is 1 position after last '\n' --> bytes to write excludes curr_pos
+
                     std::memcpy(seg_carry_prev.buff_, seg_in_span.data() + curr_pos, tail);
                     seg_carry_prev.off_ = 0;
                     seg_carry_prev.len_ = tail;
