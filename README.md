@@ -4,7 +4,3 @@
  - Multithreading
  - Chunked read and processing
  - SPSC lock-free queue between threads.
-
-Iostream Objects
-To minimize the time you have to wait on the compiler, it's good to only include the headers you really need. Many people simply include <iostream> when they don't need to -- and that can penalize your runtime as well.
-
