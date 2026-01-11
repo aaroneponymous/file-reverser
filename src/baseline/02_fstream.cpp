@@ -27,6 +27,8 @@ int main(int argc, char* argv[])
 
     /** keep '\n' in string: @reference: https://www.reddit.com/r/cpp_questions/comments/9uphye/is_there_a_way_to_have_stdgetline_keep_new_line/ */
 
+
+
     while (std::getline(in, line))
     {
         // if (!in.eof()) { line.push_back('\n'); }
@@ -42,8 +44,8 @@ int main(int argc, char* argv[])
         if (has_carriage) {
             line.push_back('\r');
         }
-        line.push_back('\n');
 
+        line.push_back('\n');
         out.write(line.data(), static_cast<std::streamsize>(line.size()));
     }
 

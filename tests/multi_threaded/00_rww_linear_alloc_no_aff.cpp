@@ -123,26 +123,27 @@ int main(int argc, char* argv[])
     std::mutex write_read_mtx;
     std::condition_variable write_read_cv;
 
+    sync_out << "Main Thread: " << std::this_thread::get_id() << "\n";
 
     auto read = [&](spscq_item& q_read_work, spscq_item& q_write_read)
     {
-        std::optional<std::uint8_t> job_index{ };
+        sync_out << "\nReader Thread: " << std::this_thread::get_id() << "\n\n";
+        std::uint8_t job_index{ };
 
         while (true)
         {
-            job_index = q_write_read.pop();
-            if (!job_index.has_value())
+            job_index = q_write_read.pop(job_index);
+            if (!q_write_read.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(write_read_mtx);
-                write_read_cv.wait(lck, [&] { return !q_write_read.empty(); });
-                job_index = q_write_read.pop();
+                write_read_cv.wait(lck, [&] { return q_write_read.pop(job_index); });
             }
             
-            auto& job_curr = job_arr[static_cast<std::size_t>(job_index.value())];
+            auto& job_curr = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_in = job_curr.seg_[job_curr.seg_count_ - 1];
             seg_in.len_ = io_input.read(seg_in.buff_, buffer_size);
 
-            if (q_read_work.push(job_index.value())) read_work_cv.notify_one();
+            if (q_read_work.push(job_index)) read_work_cv.notify_one();
             if (seg_in.len_ <= 0) break;
         }
 
@@ -150,44 +151,42 @@ int main(int argc, char* argv[])
 
     auto work = [&](spscq_item& q_read_work, spscq_item& q_work_write, seg_struct seg_carry_prev)
     {
-        std::optional<std::uint8_t> job_index{ };
+        sync_out << "\nWorker Thread: " << std::this_thread::get_id() << "\n\n";
+        std::uint8_t job_index{ };
 
         while (true)
         {
-            job_index = q_read_work.pop();
-            if (!job_index.has_value())
+            if (!q_read_work.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(read_work_mtx);
-                read_work_cv.wait(lck, [&] { return !q_read_work.empty(); });
-                job_index = q_read_work.pop();
+                read_work_cv.wait(lck, [&] { return q_read_work.pop(job_index); });
             }
             
-            auto& job_item = job_arr[static_cast<std::size_t>(job_index.value())];
+            auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_carry = job_item.seg_[0];
             auto& seg_in = job_item.seg_[1];
 
             file_reverser::utilities::mt::reverse_segment(seg_in, seg_carry, seg_carry_prev);
 
-            if (q_work_write.push(job_index.value())) work_write_cv.notify_one();
+            if (q_work_write.push(job_index)) work_write_cv.notify_one();
             if (seg_in.len_ <= 0) break;
         }
     };
 
     auto write = [&](spscq_item& q_work_write, spscq_item& q_write_read)
     {
-        std::optional<std::uint8_t> job_index{ };
+        sync_out << "\nWriter Thread: " << std::this_thread::get_id() << "\n\n";
+        std::uint8_t job_index{ };
 
         while (true)
         {
-            job_index = q_work_write.pop();
-            if (!job_index.has_value())
+            if (!q_work_write.pop(job_index))
             {
                 std::unique_lock<std::mutex> lck(work_write_mtx);
-                work_write_cv.wait(lck, [&] { return !q_work_write.empty(); });
-                job_index = q_work_write.pop();
+                work_write_cv.wait(lck, [&] { return q_work_write.pop(job_index); });
             }
 
-            auto& job_item = job_arr[static_cast<std::size_t>(job_index.value())];
+            auto& job_item = job_arr[static_cast<std::size_t>(job_index)];
             auto& seg_carry = job_item.seg_[0];
             auto& seg_in = job_item.seg_[1];
 
@@ -217,7 +216,7 @@ int main(int argc, char* argv[])
                 job_item.seg_[i].off_ = 0;
             }
 
-            if (q_write_read.push(job_index.value())) write_read_cv.notify_one();
+            if (q_write_read.push(job_index)) write_read_cv.notify_one();
         }
     };
 

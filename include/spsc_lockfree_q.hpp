@@ -64,16 +64,15 @@ public:
         return true;
     }
 
-    std::optional<value_type> pop() noexcept
+    bool pop(T& item) noexcept
     {
         const auto read = read_idx_.v.load(std::memory_order_relaxed);
-        if (read == write_idx_.v.load(std::memory_order_acquire)) return std::nullopt;
+        if (read == write_idx_.v.load(std::memory_order_acquire)) return false;
         
-        std::optional<value_type> result = q_buff_[read];
+        item = q_buff_[read];
         const auto read_next = static_cast<size_type>((read + 1) & mask_);
         read_idx_.v.store(read_next, std::memory_order_release);
-
-        return result;
+        return true;
     }
 
     bool full() const noexcept
