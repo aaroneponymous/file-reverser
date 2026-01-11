@@ -74,7 +74,7 @@ namespace quantiq
 
                 if (fd_ < 0)
                 {
-                    // handle errno (ENONENT, EACCES ...)
+                    throw std::runtime_error("no file exists\n");
                 }
 
                 is_open_ = true;

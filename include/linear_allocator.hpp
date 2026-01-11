@@ -149,7 +149,7 @@ namespace memory_mgr
         public:
             explicit LinearAllocator(std::size_t size, std::size_t align)
             {
-                pointer raw = static_cast<pointer>(::operator new[]( size, std::align_val_t{ align } ));
+                auto raw = static_cast<pointer>(::operator new[]( size, std::align_val_t{ align } ));
                 m_start_ = unique_pointer(raw, Deleter{ });  /** @revisit: redundant to pass Deleter here */
                 m_end_ = raw + size;
                 m_curr_ = raw;
@@ -173,7 +173,7 @@ namespace memory_mgr
                 return m_user;
             }
             
-            inline void reset(void) noexcept { m_curr_ = m_start_.get(); }
+            inline void reset() noexcept { m_curr_ = m_start_.get(); }
         
         private:
             unique_pointer m_start_;
