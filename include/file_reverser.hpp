@@ -5,29 +5,45 @@
 #include <cassert>
 #include <span>
 #include <algorithm>
-#include <ranges>
 #include <iostream>
 #include <atomic>
-#include <new>
+#include "linear_allocator.hpp"
 
-#ifdef __cpp_lib_hardware_interference_size
-  #include <new>
-  inline constexpr std::size_t L1_SIZE =
-      std::hardware_destructive_interference_size;
-#else
-  inline constexpr std::size_t L1_SIZE = 64;
-#endif
-
+#define LINE_SIZE 4096
 
 
 namespace file_reverser
 {
-
+    using namespace memory_mgr;
+    /**
+     * @review:
+     * 
+     * 1. Buffers & Two-Segment Forwarding
+     *    - total no. of buffers >= 3 && is always odd (used as carry buffer for the previous iteration)
+     *    - @perf: current approach utilizes half of (total buffers - 1) for reading
+     *       - carry buffers (forward-moving) might be under-utilized/empty based on input type
+     *    - @consequences:
+     * 
+     * 2. Reverse Invariant
+     *    - what happens if buffer size < 4096? 
+     *    - how does it impact carry?
+     * 
+     * 3. L1 Instruction Cache 32 Kib Awareness
+     * 
+     * 
+     * 4. Job Array --> Cache Invalidations upon Modifying Job Objects
+     *    - construct pairs of segments and Job items once, pushed on the write <---> read queue
+     *    - and utilize those instead of using a Job Array to pull from using id index
+     * 
+     * 
+     * 5. Can handover the job of fining the first '\r\n', '\n' position by the reader thread
+     */
 
 /****************************** Buffer, Segments, and Reversal Logic ******************************/
 
-    /**  
-     *  @buffer:
+    /** @brief: Data Organization  
+     * 
+     * @buffer:
      *  - A buffer is encapsulated within the Segment struct
      * 
      *  @segment:
@@ -60,11 +76,12 @@ namespace file_reverser
         std::byte* buff_{ nullptr };
         std::size_t len_{ };
         std::size_t off_{ };
+        std::int64_t end_{ 0 };
     };
 
     struct Job 
     {
-        // add unique id
+        /** @revist: add unique id (memory increase) */
         Segment seg_[2];
         std::int8_t seg_count_{ };
 
@@ -264,10 +281,9 @@ namespace file_reverser
     }
 
     /** @note: Job should contain ID index to array of Segments */
-
     namespace utilities::mt
     {
-        void handle_eof(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        inline void handle_eof(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
             /**
              * @invariant:
@@ -298,7 +314,7 @@ namespace file_reverser
             std::swap(seg_carry, seg_carry_prev); 
         }
 
-        void handle_carry(std::byte* lf, Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        inline void handle_carry(std::byte* lf, Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
             std::size_t prefix_size = (lf - seg_in.buff_) + 1; // copy '\n' as well
             std::memcpy( seg_carry_prev.buff_ + seg_carry_prev.len_, seg_in.buff_, prefix_size);
@@ -326,7 +342,7 @@ namespace file_reverser
 
         }
 
-        void reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
+        inline void reverse_segment(Segment& seg_in, Segment& seg_carry, Segment& seg_carry_prev)
         {
             // if (both len < 0 return)
             if (seg_carry_prev.len_ > 0) // seg_carry contains unprocessed trailing bytes from previous iteration
@@ -363,6 +379,7 @@ namespace file_reverser
                     const std::size_t tail = pos_end - curr_pos;
                     // != curr_pos + 1
                     seg_in.len_ = curr_pos;  // curr_pos is 1 position after last '\n' --> bytes to write excludes curr_pos
+
                     std::memcpy(seg_carry_prev.buff_, seg_in_span.data() + curr_pos, tail);
                     seg_carry_prev.off_ = 0;
                     seg_carry_prev.len_ = tail;
@@ -383,54 +400,46 @@ namespace file_reverser
                 curr_pos = lf + 1;
             }
         }
-
-        
-
-    
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /****************************** Memory Management & Allocation, and SPSCQ ******************************/
 
+    /** Memory Allocator & Memory Manager (RAII)
+     * 
+     * @responsibility:
+     * 
+     * @clients:
+     * 
+     * 1. raw byte buffers
+     * @count: ->  no. of buffers >= 3 && always odd (one of them is used as carry buffer for the previous iteration)
+     * @buff_size: -> buffer size ∈ { 1 Kib, 2 Kib, 4 Kib, 8 Kib, 16 Kib } -> optimize to fit within L1 Cache
+     * @layout:     aligned to cache line size ->   [ buff 0, buff 1, buff 3, ... buff n ]
+     * 
+     * 2. array of job structs  @revisit: refer code block @review: 4. Job Array for clarifications
+     * @seg_: seg_[] holds 2 segment objects -> seg_[0] : carry segment, seg_[1] : read-in segment
+     *       - segment struct is at most 3 * 8 -> 24 bytes in size
+     *       - seg_ --> 24 * 2 --> 48 bytes
+     * @seg_count_: size of seg_[] --> std::uint8_t
+     *       - seg_count_ --> 1 byte
+     * - total size --> 48 + 1 + 7 (padding alignof(Segment) which is 8)
+     * - total size --> 56 
+     * 
+     * 3. spsc lock-free queues
+     * - pointer
+     * 
+     * @approach:
+     *   - single chunk allocation for all the required components
+     *   - carve memory and delegate
+     */
+
+
+    constexpr std::size_t round_up(std::size_t n, std::size_t a) noexcept
+    {
+        return (a == 0) ? n : ((n + (a - 1)) / a) * a;
+    }
+
+
+    /** @research: brace-initialization { } in ctor & class */
     template <typename T, typename Allocator = std::allocator<T>>
     class SPSC_LFQ
     {
@@ -443,7 +452,7 @@ namespace file_reverser
         using index_type      = std::atomic<size_type>;
         using allocator_type  = Allocator;
         using alloc_traits    = std::allocator_traits<allocator_type>;
-        using pointer         = typename alloc_traits::pointer; // typically T*
+        using pointer         = alloc_traits::pointer; // typically T*
 
         explicit SPSC_LFQ(size_type capacity, const allocator_type& alloc = allocator_type())
             : alloc_(alloc), cap_(capacity)
@@ -526,7 +535,7 @@ namespace file_reverser
         size_type      cap_{};
         size_type      mask_{};
 
-        alignas(L1_SIZE) index_type read_{0};
-        alignas(L1_SIZE) index_type write_{0};
+        alignas(cache_line_size) index_type read_{0};
+        alignas(cache_line_size) index_type write_{0};
     };
 }

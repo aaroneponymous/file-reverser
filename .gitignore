@@ -43,6 +43,9 @@
 *.dSYM/
 *.debug
 
+# input files
+*.txt
+
 # -----------------------------
 # Build directories (common)
 # -----------------------------
@@ -60,8 +63,8 @@ compile_commands.json
 # -----------------------------
 # Editor/OS junk
 # -----------------------------
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 .DS_Store

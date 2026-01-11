@@ -1,5 +1,5 @@
-#include "../../include/file_reverser.h"
-#include "../../include/io_raii.h"
+#include "../../include/file_reverser.hpp"
+#include "../../include/io_raii.hpp"
 #include <string>
 #include <memory>
 #include <new>
@@ -7,8 +7,10 @@
 #include <mutex>
 #include <condition_variable>
 #include <syncstream>
-#include <string>
 #include <vector>
+#include <array>
+#include <pthread.h>
+#include <stdexcept>
 
 #define sync_out std::osyncstream(std::cout)
 
@@ -44,7 +46,7 @@ int main(int argc, char* argv[])
 
 
     const std::size_t buffer_size{ 4096 };
-    const std::size_t buffer_count{ 9 };
+    const std::size_t buffer_count{ 11 };
     const std::size_t buffer_in_flight{ buffer_count - 1 };
 
     const std::size_t align = std::max<std::size_t>(cacheline_stride(), alignof(std::max_align_t));
@@ -118,6 +120,8 @@ int main(int argc, char* argv[])
 
         while (true)
         {
+            /** @performance: accessing acquire - acquire 
+             *  synchronization required each time empty() called */
             if (q_write_read.empty())
             {
                 std::unique_lock<std::mutex> lck(write_read_mtx);
@@ -291,17 +295,37 @@ int main(int argc, char* argv[])
     };
 
 
+    std::array<std::jthread, 3> threads;
+
     {
         seg_struct seg_carry_unique = { &raw[(buffer_count - 1) * stride], 0, 0 };
 
-        std::jthread reader_thread{ read, std::ref(q_read_work_), std::ref(q_write_read_) };
-        std::jthread worker_thread{ work, std::ref(q_read_work_), std::ref(q_work_write_), seg_carry_unique };
-        std::jthread writer_thread{ write, std::ref(q_work_write_), std::ref(q_write_read_) };
+        for (std::size_t i{ }; i < threads.size(); ++i)
+        {
+            if (i == 0) threads[i] = std::jthread{ read, std::ref(q_read_work_), std::ref(q_write_read_) };
+            else if (i == 1) threads[i] = std::jthread{ work, std::ref(q_read_work_), std::ref(q_work_write_), seg_carry_unique };
+            else /* i == 2 */ threads[i] = std::jthread{ write, std::ref(q_work_write_), std::ref(q_write_read_) };
+
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(static_cast<int>(i), &cpuset);
+            int rc = pthread_setaffinity_np(threads[i + i].native_handle(), sizeof(cpuset), &cpuset);
+            if (rc != 0)
+            {
+                throw std::runtime_error("Error calling pthread_setaffinity_np\n");
+            }
+        }
     }
 
+    // ensure threads are finished before closing fds
+    for (auto& t : threads)
+    {
+        if (t.joinable()) t.join();
+    }
 
     io_input.close();
     io_output.close();
 
     return 0;
+
 }

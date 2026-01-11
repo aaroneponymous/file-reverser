@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <iostream>
 
-int main()
+int main(int argc, char* argv[])
 {
-    const std::string in_path  = "../input/crime_and_punishment.txt";
-    const std::string out_path = "../output/crime_and_punishment_fstream.txt";
+    const std::string in_path(argv[1]);
+    const std::string out_path(argv[2]); 
 
     std::ifstream in(in_path, std::ios::binary);
     if (!in) {

@@ -42,7 +42,7 @@ namespace quantiq
             void wopen(const char* path)
             {
                 if (is_set() || !path) throw std::logic_error("A file is already open or file path is null\n");
-                fd_ = ::open(path, O_WRONLY | O_APPEND | O_CREAT, 0644);
+                fd_ = ::open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
                 if (fd_ < 0)
                 {
@@ -74,7 +74,7 @@ namespace quantiq
 
                 if (fd_ < 0)
                 {
-                    // handle errno (ENONENT, EACCES ...)
+                    throw std::runtime_error("no file exists\n");
                 }
 
                 is_open_ = true;

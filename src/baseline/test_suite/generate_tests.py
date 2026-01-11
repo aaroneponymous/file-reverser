@@ -191,6 +191,7 @@ def make_crlf_split_across_boundary(path: Path, cr_at: int, desc: str, manifest:
     manifest_row(manifest, path.name, "CRLF", path.stat().st_size, desc)
 
 
+
 def write_utf8_split_line_abs(f, written: int, split_offset: int, token_bytes: bytes, newline: bytes) -> int:
     """
     Writes a single line such that token_bytes begins at absolute position `split_offset`.
@@ -279,6 +280,7 @@ def make_eof_exact_multiple_of_buf_no_newline(path: Path, total_bytes: int, desc
         assert written == total_bytes
 
     manifest_row(manifest, path.name, "LF(no-final-nl)", path.stat().st_size, desc)
+
 
 
 def make_eof_no_newline_multibyte_end(path: Path, desc: str, manifest: list[str]) -> None:
@@ -778,13 +780,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-# # Generate suite aligned to BUFFSIZE=4096
-# python3 generate_tests.py
-
-# # Generate suite aligned to BUFFSIZE=8192
-# BUF_SIZE=8192 python3 generate_tests.py
-
-# # Also generate the optional 1 GiB file
-# BUF_SIZE=8192 GEN_1G=1 python3 generate_tests.py

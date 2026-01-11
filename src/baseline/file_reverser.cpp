@@ -9,8 +9,8 @@
 #include <new>        // std::hardware_destructive_interference_size
 #include <sys/uio.h>
 
-#include "../../include/io_raii.h"
-#include "../../include/file_reverser.h"
+#include "../../include/io_raii.hpp"
+#include "../../include/file_reverser.hpp"
 
 namespace {
 
